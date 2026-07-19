@@ -111,6 +111,9 @@
       <AdditionalLibraryDirectories>"C:\Directories\уник\прога\SFML-3.0.2-Windows.VS2022.x64\SFML-3.0.2\lib";%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>sfml-graphics-d.lib;sfml-window-d.lib;sfml-system-d.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /E /I /Y "$(SolutionDir)assets" "$(OutDir)assets"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -129,6 +132,9 @@
       <AdditionalLibraryDirectories>"C:\Directories\уник\прога\SFML-3.0.2-Windows.VS2022.x64\SFML-3.0.2\lib";%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>sfml-graphics.lib;sfml-window.lib;sfml-system.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /E /I /Y "$(SolutionDir)assets" "$(OutDir)assets"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="plants vs zombies.cpp" />
