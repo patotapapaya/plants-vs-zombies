@@ -10,6 +10,7 @@
 
 enum class ZombieType { NORMAL, FAST, TOUGH };
 enum class PlantType { SHOOTER, WALL, SLOWER };
+enum class GameState { MENU, PLAY };
 
 // Создание текстур для резерва
 static sf::Texture createTexture(int w, int h, sf::Color color) {
@@ -65,9 +66,8 @@ public:
         // Ставим в центр клетки (startX - это левый верхний угол клетки)
         sprite.setPosition({ startX + 50, startY + 50 });
 
-        // НЕ меняем цвет спрайта - используем цвета из текстуры
-        // Если текстура не загрузилась - тогда красим
-        if (texSize.x == 64 || texSize.x == 80) { // это наши заглушки
+        // Используем цветовую замену только для резервных текстур
+        if (texSize.x == 64 || texSize.x == 80) {
             switch (t) {
             case ZombieType::NORMAL:
                 sprite.setColor(sf::Color(180, 180, 180));
@@ -136,7 +136,7 @@ public:
             sprite.setPosition({ posX + 50, posY + 50 });
             break;
         case PlantType::SLOWER:
-            sprite.setScale({ 0.14f, 0.14f });
+            sprite.setScale({ 0.15f, 0.15f });
             sprite.setOrigin({ sprite.getLocalBounds().size.x / 2, sprite.getLocalBounds().size.y / 2 });
             sprite.setPosition({ posX + 50, posY + 50 });
             break;
@@ -179,9 +179,6 @@ public:
         sprite.move({ 400.0f * deltaTime, 0.0f });
         if (sprite.getPosition().x > 950.0f) isActive = false;
     }
-
-    float getX() const { return sprite.getPosition().x; }
-    float getY() const { return sprite.getPosition().y; }
 };
 
 struct SaveData {
@@ -189,6 +186,7 @@ struct SaveData {
     int score = 0;
     int highestLevel = 1;
 };
+
 std::string findPic(const std::string& name) {
     // Получаем путь к папке с exe через WinAPI
     char buffer[MAX_PATH];
@@ -208,6 +206,20 @@ std::string findPic(const std::string& name) {
     return "";
 }
 int main() {
+    GameState currentState = GameState::MENU;
+
+    sf::Texture menuBgTexture;
+    std::string menuBgPath = findPic("menu_background.jpg");
+    if (!menuBgTexture.loadFromFile(menuBgPath)) {
+        menuBgTexture = createTexture(1000, 700, sf::Color::Black);
+    }
+    sf::Sprite menuBgSprite(menuBgTexture);
+
+    sf::Font font;
+    std::string fontPath = findPic("Sonic_1_Title_Screen_Filled.ttf");
+    if (!font.openFromFile(fontPath)) {
+        return -1;
+    }
     srand(static_cast<unsigned>(time(nullptr)));
 
     sf::RenderWindow window(sf::VideoMode({ 1000, 700 }), "Zombies vs Plants");
@@ -307,6 +319,9 @@ int main() {
             }
 
             if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
+                if (key->code == sf::Keyboard::Key::Enter && currentState == GameState::MENU) {
+                    currentState = GameState::PLAY;
+                }
                 if (key->code == sf::Keyboard::Key::Num1) selectedPlant = PlantType::SHOOTER;
                 if (key->code == sf::Keyboard::Key::Num2) selectedPlant = PlantType::WALL;
                 if (key->code == sf::Keyboard::Key::Num3) selectedPlant = PlantType::SLOWER;
@@ -351,7 +366,7 @@ int main() {
             }
 
             if (const auto* mouse = event->getIf<sf::Event::MouseButtonPressed>()) {
-                if (mouse->button == sf::Mouse::Button::Left && !gameOver && !levelComplete && waveActive) {
+                if (mouse->button == sf::Mouse::Button::Left && currentState == GameState::PLAY && !gameOver && !levelComplete && waveActive) {
                     sf::Vector2i pos = sf::Mouse::getPosition(window);
                     int gx = (pos.x / 100) * 100;
                     int gy = (pos.y / 100) * 100;
@@ -382,132 +397,161 @@ int main() {
         }
 
         // ЛОГИКА
-        if (!gameOver && !levelComplete) {
-            if (waveActive && static_cast<int>(zombies.size()) + zombiesKilled < zombiesToKill) {
-                if (spawnClock.getElapsedTime().asSeconds() >= 1.2f) {
-                    int row = rand() % 5;
-                    float y = 100.0f + static_cast<float>(row) * 100.0f;
+        if (currentState == GameState::PLAY) {
+            if (!gameOver && !levelComplete) {
+                if (waveActive && static_cast<int>(zombies.size()) + zombiesKilled < zombiesToKill) {
+                    if (spawnClock.getElapsedTime().asSeconds() >= 1.2f) {
+                        int row = rand() % 5;
+                        float y = 100.0f + static_cast<float>(row) * 100.0f;
 
-                    int r = rand() % 10;
-                    ZombieType type;
-                    if (currentLevel >= 3 && r < 2) type = ZombieType::TOUGH;
-                    else if (currentLevel >= 2 && r < 4) type = ZombieType::FAST;
-                    else type = ZombieType::NORMAL;
+                        int r = rand() % 10;
+                        ZombieType type;
+                        if (currentLevel >= 3 && r < 2) type = ZombieType::TOUGH;
+                        else if (currentLevel >= 2 && r < 4) type = ZombieType::FAST;
+                        else type = ZombieType::NORMAL;
 
-                    sf::Texture* tex = &zombieNormTex;
-                    if (type == ZombieType::FAST) tex = &zombieFastTex;
-                    if (type == ZombieType::TOUGH) tex = &zombieToughTex;
+                        sf::Texture* tex = &zombieNormTex;
+                        if (type == ZombieType::FAST) tex = &zombieFastTex;
+                        if (type == ZombieType::TOUGH) tex = &zombieToughTex;
 
-                    zombies.emplace_back(type, *tex, 950.0f, y);
-                    spawnClock.restart();
+                        zombies.emplace_back(type, *tex, 950.0f, y);
+                        spawnClock.restart();
+                    }
                 }
-            }
 
-            if (waveActive && zombies.empty() && zombiesKilled >= zombiesToKill) {
-                waveActive = false;
-                levelComplete = true;
-                save.highestLevel = currentLevel;
-                save.score = score;
-            }
-
-            for (auto& z : zombies) z.update(deltaTime);
-
-            for (auto& p : plants) {
-                p.update(deltaTime);
-                if (p.canShoot()) {
-                    bullets.emplace_back(bulletTex, p.gridX + 70, p.gridY + 30, false);
-                    p.resetShoot();
+                if (waveActive && zombies.empty() && zombiesKilled >= zombiesToKill) {
+                    waveActive = false;
+                    levelComplete = true;
+                    save.highestLevel = currentLevel;
+                    save.score = score;
                 }
-                if (p.canSlow()) {
+
+                for (auto& z : zombies) z.update(deltaTime);
+
+                for (auto& p : plants) {
+                    p.update(deltaTime);
+                    if (p.canShoot()) {
+                        bullets.emplace_back(bulletTex, p.gridX + 70, p.gridY + 30, false);
+                        p.resetShoot();
+                    }
+                    if (p.canSlow()) {
+                        for (auto& z : zombies) {
+                            if (std::abs(z.getY() - (p.gridY + 50)) < 50) {
+                                bullets.emplace_back(bulletTex, p.gridX + 70, p.gridY + 30, true);
+                                p.resetSlow();
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                for (auto& b : bullets) b.update(deltaTime);
+
+                for (auto& b : bullets) {
+                    if (!b.isActive) continue;
                     for (auto& z : zombies) {
-                        if (std::abs(z.getY() - (p.gridY + 50)) < 50) {
-                            bullets.emplace_back(bulletTex, p.gridX + 70, p.gridY + 30, true);
-                            p.resetSlow();
+                        if (!z.isDead && b.sprite.getGlobalBounds().findIntersection(z.sprite.getGlobalBounds())) {
+                            z.takeDamage(1.0f);
+                            if (b.isSlow) z.slow(3.0f);
+                            b.isActive = false;
+                            if (z.isDead) {
+                                int add = (z.type == ZombieType::TOUGH) ? 30 : (z.type == ZombieType::FAST ? 15 : 10);
+                                score += add;
+                                zombiesKilled++;
+                            }
                             break;
                         }
                     }
                 }
-            }
 
-            for (auto& b : bullets) b.update(deltaTime);
-
-            for (auto& b : bullets) {
-                if (!b.isActive) continue;
-                for (auto& z : zombies) {
-                    if (!z.isDead && b.sprite.getGlobalBounds().findIntersection(z.sprite.getGlobalBounds())) {
-                        z.takeDamage(1.0f);
-                        if (b.isSlow) z.slow(3.0f);
-                        b.isActive = false;
-                        if (z.isDead) {
-                            int add = (z.type == ZombieType::TOUGH) ? 30 : (z.type == ZombieType::FAST ? 15 : 10);
-                            score += add;
-                            zombiesKilled++;
-                        }
+                for (const auto& z : zombies) {
+                    if (!z.isDead && z.getX() < 100.0f) {
+                        gameOver = true;
                         break;
                     }
                 }
-            }
 
-            for (const auto& z : zombies) {
-                if (!z.isDead && z.getX() < 100.0f) {
-                    gameOver = true;
-                    break;
+                zombies.erase(std::remove_if(zombies.begin(), zombies.end(),
+                    [](const Zombie& z) { return z.isDead; }), zombies.end());
+                bullets.erase(std::remove_if(bullets.begin(), bullets.end(),
+                    [](const Bullet& b) { return !b.isActive; }), bullets.end());
+                plants.erase(std::remove_if(plants.begin(), plants.end(),
+                    [](const Plant& p) { return !p.isAlive; }), plants.end());
+            }
+        }
+        // ОТРИСОВКА
+        if (currentState == GameState::PLAY) {
+            window.clear(sf::Color(34, 139, 34));
+
+            for (int i = 100; i < 900; i += 100) {
+                for (int j = 100; j < 600; j += 100) {
+                    sf::RectangleShape cell(sf::Vector2f(90.0f, 90.0f));
+                    cell.setPosition({ static_cast<float>(i) + 5, static_cast<float>(j) + 5 });
+                    cell.setFillColor(sf::Color::Transparent);
+                    cell.setOutlineColor(sf::Color(80, 80, 80));
+                    cell.setOutlineThickness(1.0f);
+                    window.draw(cell);
                 }
             }
 
-            zombies.erase(std::remove_if(zombies.begin(), zombies.end(),
-                [](const Zombie& z) { return z.isDead; }), zombies.end());
-            bullets.erase(std::remove_if(bullets.begin(), bullets.end(),
-                [](const Bullet& b) { return !b.isActive; }), bullets.end());
-            plants.erase(std::remove_if(plants.begin(), plants.end(),
-                [](const Plant& p) { return !p.isAlive; }), plants.end());
-        }
+            window.draw(house);
+            for (auto& p : plants) window.draw(p.sprite);
+            for (auto& z : zombies) window.draw(z.sprite);
+            for (auto& b : bullets) window.draw(b.sprite);
 
-        // ОТРИСОВКА 
-        window.clear(sf::Color(34, 139, 34));
+            float selX = 10.0f + static_cast<int>(selectedPlant) * 35.0f;
+            selector.setPosition({ selX, 660.0f });
+            window.draw(selector);
 
-        for (int i = 100; i < 900; i += 100) {
-            for (int j = 100; j < 600; j += 100) {
-                sf::RectangleShape cell(sf::Vector2f(90.0f, 90.0f));
-                cell.setPosition({ static_cast<float>(i) + 5, static_cast<float>(j) + 5 });
-                cell.setFillColor(sf::Color::Transparent);
-                cell.setOutlineColor(sf::Color(80, 80, 80));
-                cell.setOutlineThickness(1.0f);
-                window.draw(cell);
+            sf::RectangleShape scoreBg(sf::Vector2f(150.0f, 25.0f));
+            scoreBg.setFillColor(sf::Color(0, 0, 0, 150));
+            scoreBg.setPosition({ 10.0f, 10.0f });
+            window.draw(scoreBg);
+
+            sf::RectangleShape levelBg(sf::Vector2f(150.0f, 25.0f));
+            levelBg.setFillColor(sf::Color(0, 0, 0, 150));
+            levelBg.setPosition({ 10.0f, 40.0f });
+            window.draw(levelBg);
+
+            if (gameOver) {
+                sf::RectangleShape overlay(sf::Vector2f(400.0f, 150.0f));
+                overlay.setFillColor(sf::Color(0, 0, 0, 220));
+                overlay.setPosition({ 300.0f, 280.0f });
+                window.draw(overlay);
+            }
+
+            if (levelComplete) {
+                sf::RectangleShape overlay(sf::Vector2f(400.0f, 150.0f));
+                overlay.setFillColor(sf::Color(0, 0, 0, 220));
+                overlay.setPosition({ 300.0f, 280.0f });
+                window.draw(overlay);
             }
         }
+        if (currentState == GameState::MENU) {
+            window.draw(menuBgSprite);
+            // Текст на главном меню
+            sf::Text menuText(font);
+            menuText.setString("MAIN MENU");
+            menuText.setCharacterSize(60);
+            menuText.setFillColor(sf::Color::White);
 
-        window.draw(house);
-        for (auto& p : plants) window.draw(p.sprite);
-        for (auto& z : zombies) window.draw(z.sprite);
-        for (auto& b : bullets) window.draw(b.sprite);
+            // Выравнивание по центру
+            sf::FloatRect menuBounds = menuText.getLocalBounds();
+            menuText.setOrigin({ menuBounds.size.x / 2, menuBounds.size.y / 2 });
+            menuText.setPosition({ 500, 250 }); 
 
-        float selX = 10.0f + static_cast<int>(selectedPlant) * 35.0f;
-        selector.setPosition({ selX, 660.0f });
-        window.draw(selector);
+            window.draw(menuText);
 
-        sf::RectangleShape scoreBg(sf::Vector2f(150.0f, 25.0f));
-        scoreBg.setFillColor(sf::Color(0, 0, 0, 150));
-        scoreBg.setPosition({ 10.0f, 10.0f });
-        window.draw(scoreBg);
+            sf::Text playText(font);
+            playText.setString("Press ENTER to play");
+            playText.setCharacterSize(30);
+            playText.setFillColor(sf::Color::Yellow);
 
-        sf::RectangleShape levelBg(sf::Vector2f(150.0f, 25.0f));
-        levelBg.setFillColor(sf::Color(0, 0, 0, 150));
-        levelBg.setPosition({ 10.0f, 40.0f });
-        window.draw(levelBg);
+            sf::FloatRect playBounds = playText.getLocalBounds();
+            playText.setOrigin({ playBounds.size.x / 2, playBounds.size.y / 2 });
+            playText.setPosition({ 500, 350 });
 
-        if (gameOver) {
-            sf::RectangleShape overlay(sf::Vector2f(400.0f, 150.0f));
-            overlay.setFillColor(sf::Color(0, 0, 0, 220));
-            overlay.setPosition({ 300.0f, 280.0f });
-            window.draw(overlay);
-        }
-
-        if (levelComplete) {
-            sf::RectangleShape overlay(sf::Vector2f(400.0f, 150.0f));
-            overlay.setFillColor(sf::Color(0, 0, 0, 220));
-            overlay.setPosition({ 300.0f, 280.0f });
-            window.draw(overlay);
+            window.draw(playText);
         }
 
         window.display();
