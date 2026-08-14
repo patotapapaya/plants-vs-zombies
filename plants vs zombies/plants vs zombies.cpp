@@ -10,7 +10,7 @@
 
 enum class ZombieType { NORMAL, FAST, TOUGH };
 enum class PlantType { SHOOTER, WALL, SLOWER };
-enum class GameState { MENU, PLAY };
+enum class GameState { MENU, LEVEL_SELECT, PLAY };
 
 // Создание текстур для резерва
 static sf::Texture createTexture(int w, int h, sf::Color color) {
@@ -63,11 +63,11 @@ public:
         sf::FloatRect bounds = sprite.getLocalBounds();
         sprite.setOrigin({ bounds.size.x / 2, bounds.size.y / 2 });
 
-        // Ставим в центр клетки (startX - это левый верхний угол клетки)
+        // Ставим в центр клетки 
         sprite.setPosition({ startX + 50, startY + 50 });
 
-        // Используем цветовую замену только для резервных текстур
-        if (texSize.x == 64 || texSize.x == 80) {
+        //  Используем цветовую замену только для резервных текстур
+        if (texSize.x == 64 || texSize.x == 80) { 
             switch (t) {
             case ZombieType::NORMAL:
                 sprite.setColor(sf::Color(180, 180, 180));
@@ -179,6 +179,9 @@ public:
         sprite.move({ 400.0f * deltaTime, 0.0f });
         if (sprite.getPosition().x > 950.0f) isActive = false;
     }
+
+    float getX() const { return sprite.getPosition().x; }
+    float getY() const { return sprite.getPosition().y; }
 };
 
 struct SaveData {
@@ -186,7 +189,6 @@ struct SaveData {
     int score = 0;
     int highestLevel = 1;
 };
-
 std::string findPic(const std::string& name) {
     // Получаем путь к папке с exe через WinAPI
     char buffer[MAX_PATH];
@@ -205,6 +207,7 @@ std::string findPic(const std::string& name) {
 
     return "";
 }
+
 int main() {
     GameState currentState = GameState::MENU;
 
@@ -243,7 +246,6 @@ int main() {
     if (!slowerTex.loadFromFile(slowerPath)) {
         slowerTex = createTexture(100, 300, sf::Color(255, 255, 80));
     }
-
     // Текстуры зомби с заглушками
     sf::Texture zombieNormTex;
     std::string zombieNormPath = findPic("zombie.png");
@@ -263,6 +265,15 @@ int main() {
         zombieToughTex = createTexture(300, 300, sf::Color(160, 100, 40));
     }
 
+    // Текстура лопаты
+    sf::Texture shovelTex;
+    std::string shovelPath = findPic("лопата.png");
+    if (!shovelTex.loadFromFile(shovelPath)) {
+        shovelTex = createTexture(32, 32, sf::Color(200, 150, 100));
+    }
+    sf::Sprite shovelSprite(shovelTex);
+    shovelSprite.setScale({ 0.5f, 0.5f });
+
     // Текстура пули
     sf::Texture bulletTex = createTexture(20, 20, sf::Color(255, 255, 0));
 
@@ -275,6 +286,7 @@ int main() {
     std::vector<Zombie> zombies;
     std::vector<Plant> plants;
     std::vector<Bullet> bullets;
+
 
     // Состояние игры
     SaveData save;
@@ -291,6 +303,7 @@ int main() {
     bool waveActive = true;
     bool gameOver = false;
     bool levelComplete = false;
+    bool isShovelActive = false;
     PlantType selectedPlant = PlantType::SHOOTER;
 
     sf::Clock gameClock;
@@ -321,6 +334,9 @@ int main() {
             if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
                 if (key->code == sf::Keyboard::Key::Enter && currentState == GameState::MENU) {
                     currentState = GameState::PLAY;
+                }
+                if (key->code == sf::Keyboard::Key::L) {
+                    isShovelActive = !isShovelActive;
                 }
                 if (key->code == sf::Keyboard::Key::Num1) selectedPlant = PlantType::SHOOTER;
                 if (key->code == sf::Keyboard::Key::Num2) selectedPlant = PlantType::WALL;
@@ -366,6 +382,25 @@ int main() {
             }
 
             if (const auto* mouse = event->getIf<sf::Event::MouseButtonPressed>()) {
+                if (mouse->button == sf::Mouse::Button::Left) {
+                    sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+                    // Проверяем, кликнули ли по лопате
+                    sf::FloatRect shovelBounds = shovelSprite.getGlobalBounds();
+                    if (shovelBounds.contains(static_cast<sf::Vector2f>(mousePos))) {
+                        isShovelActive = !isShovelActive;
+                    }
+                }
+                if (mouse->button == sf::Mouse::Button::Left && isShovelActive && currentState == GameState::PLAY) {
+                    sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+                    // Проверяем все растения
+                    for (auto it = plants.begin(); it != plants.end(); ++it) {
+                        sf::FloatRect plantBounds = it->sprite.getGlobalBounds();
+                        if (plantBounds.contains(static_cast<sf::Vector2f>(mousePos))) {
+                            it->isAlive = false; // Удаляем растение
+                            break;
+                        }
+                    }
+                }
                 if (mouse->button == sf::Mouse::Button::Left && currentState == GameState::PLAY && !gameOver && !levelComplete && waveActive) {
                     sf::Vector2i pos = sf::Mouse::getPosition(window);
                     int gx = (pos.x / 100) * 100;
@@ -512,6 +547,17 @@ int main() {
             levelBg.setFillColor(sf::Color(0, 0, 0, 150));
             levelBg.setPosition({ 10.0f, 40.0f });
             window.draw(levelBg);
+
+            // Иконка лопаты
+            shovelSprite.setScale({ 0.13f, 0.13f });
+            shovelSprite.setPosition({ -15, 100 }); 
+            if (isShovelActive) {
+                shovelSprite.setColor(sf::Color::Yellow); 
+            }
+            else {
+                shovelSprite.setColor(sf::Color::White);
+            }
+            window.draw(shovelSprite);
 
             if (gameOver) {
                 sf::RectangleShape overlay(sf::Vector2f(400.0f, 150.0f));
