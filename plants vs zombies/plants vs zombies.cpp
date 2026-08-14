@@ -9,7 +9,12 @@
 #include <windows.h>
 
 enum class ZombieType { NORMAL, FAST, TOUGH };
-enum class PlantType { SHOOTER, WALL, SLOWER };
+enum class PlantType {
+    NONE,
+    SHOOTER,
+    WALL,
+    SLOWER
+};
 enum class GameState { MENU, LEVEL_SELECT, PLAY };
 
 // Создание текстур для резерва
@@ -65,7 +70,7 @@ public:
         sprite.setPosition({ startX + 50, startY + 50 });
 
         // Используем цветовую замену только для резервных текстур
-        if (texSize.x == 64 || texSize.x == 80) {
+        if (texSize.x == 64 || texSize.x == 80) { 
             switch (t) {
             case ZombieType::NORMAL:
                 sprite.setColor(sf::Color(180, 180, 180));
@@ -255,7 +260,22 @@ int main() {
     float offsetX = (winSize.x - bounds.size.x) / 2.0f;
     float offsetY = (winSize.y - bounds.size.y) / 2.0f;
     levelsBgSprite.setPosition({ offsetX, offsetY });
-    
+
+    sf::Texture gameBgTexture;
+    std::string gameBgPath = findPic("game_bg.png");
+    if (!gameBgTexture.loadFromFile(gameBgPath)) {
+        gameBgTexture = createTexture(1000, 700, sf::Color(34, 139, 34));
+    }
+    sf::Sprite gameBgSprite(gameBgTexture);
+
+    // Растягиваем фон игры
+    sf::Vector2u gameTexSize = gameBgTexture.getSize();
+    sf::Vector2u gameWinSize = window.getSize();
+    float gameScaleX = static_cast<float>(gameWinSize.x) / gameTexSize.x;
+    float gameScaleY = static_cast<float>(gameWinSize.y) / gameTexSize.y;
+    gameBgSprite.setScale({ gameScaleX, gameScaleY });
+    gameBgSprite.setPosition({ 0, 0 });
+
     // Загрузка текстур с заглушками
     sf::Texture shooterTex;
     std::string shooterPath = findPic("shooter.png");
@@ -338,7 +358,7 @@ int main() {
     bool gameOver = false;
     bool levelComplete = false;
     bool isShovelActive = false;
-    PlantType selectedPlant = PlantType::SHOOTER;
+    PlantType selectedPlant = PlantType::NONE;
     int pressedLevel = -1;
 
     sf::Clock gameClock;
@@ -371,7 +391,7 @@ int main() {
                     currentState = GameState::LEVEL_SELECT;
                 }
                 if (key->code == sf::Keyboard::Key::L) {
-                    isShovelActive = !isShovelActive; 
+                    isShovelActive = !isShovelActive;
                 }
                 if (key->code == sf::Keyboard::Key::Num1) selectedPlant = PlantType::SHOOTER;
                 if (key->code == sf::Keyboard::Key::Num2) selectedPlant = PlantType::WALL;
@@ -588,6 +608,7 @@ int main() {
         // ОТРИСОВКА
         if (currentState == GameState::PLAY) {
             window.clear(sf::Color(34, 139, 34));
+            window.draw(gameBgSprite); 
 
             for (int i = 100; i < 900; i += 100) {
                 for (int j = 100; j < 600; j += 100) {
@@ -619,11 +640,11 @@ int main() {
             levelBg.setPosition({ 10.0f, 40.0f });
             window.draw(levelBg);
 
-            // Иконка лопаты
+            // Иконка лопаты 
             shovelSprite.setScale({ 0.13f, 0.13f });
             shovelSprite.setPosition({ -15, 100 }); 
             if (isShovelActive) {
-                shovelSprite.setColor(sf::Color::Yellow);
+                shovelSprite.setColor(sf::Color::Yellow); 
             }
             else {
                 shovelSprite.setColor(sf::Color::White);
@@ -655,7 +676,7 @@ int main() {
             // Выравнивание по центру
             sf::FloatRect menuBounds = menuText.getLocalBounds();
             menuText.setOrigin({ menuBounds.size.x / 2, menuBounds.size.y / 2 });
-            menuText.setPosition({ 500, 250 }); 
+            menuText.setPosition({ 500, 250 });
 
             window.draw(menuText);
 
@@ -692,7 +713,7 @@ int main() {
                 button.setPosition({ positionsX[i], positionsY[i] });
                 window.draw(button);
 
-                // Цифра уровня поверх кнопки
+                // Цифра уровня
                 sf::Text levelNum(font);
                 levelNum.setString(std::to_string(i + 1));
                 levelNum.setCharacterSize(30);
