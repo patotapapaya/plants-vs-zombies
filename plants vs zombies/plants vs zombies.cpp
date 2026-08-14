@@ -34,10 +34,8 @@ public:
         : sprite(texture), type(t), isDead(false), slowTimer(0.0f),
         health(3.0f), speed(-35.0f), originalSpeed(-35.0f)
     {
-        // Получаем размер текстуры
         sf::Vector2u texSize = texture.getSize();
 
-        // Устанавливаем целевой размер в зависимости от типа
         switch (t) {
         case ZombieType::NORMAL:
             health = 3.0f;
@@ -63,11 +61,11 @@ public:
         sf::FloatRect bounds = sprite.getLocalBounds();
         sprite.setOrigin({ bounds.size.x / 2, bounds.size.y / 2 });
 
-        // Ставим в центр клетки 
+        // Ставим в центр клетки
         sprite.setPosition({ startX + 50, startY + 50 });
 
-        //  Используем цветовую замену только для резервных текстур
-        if (texSize.x == 64 || texSize.x == 80) { 
+        // Используем цветовую замену только для резервных текстур
+        if (texSize.x == 64 || texSize.x == 80) {
             switch (t) {
             case ZombieType::NORMAL:
                 sprite.setColor(sf::Color(180, 180, 180));
@@ -190,16 +188,13 @@ struct SaveData {
     int highestLevel = 1;
 };
 std::string findPic(const std::string& name) {
-    // Получаем путь к папке с exe через WinAPI
     char buffer[MAX_PATH];
     GetModuleFileNameA(NULL, buffer, MAX_PATH);
     std::string exePath(buffer);
     std::string exeDir = exePath.substr(0, exePath.find_last_of("\\/") + 1);
 
-    // Пробуем загрузить
     std::string fullPath = exeDir + "assets/" + name;
 
-    // Проверяем существует ли файл
     DWORD attr = GetFileAttributesA(fullPath.c_str());
     if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY)) {
         return fullPath;
@@ -211,13 +206,6 @@ std::string findPic(const std::string& name) {
 int main() {
     GameState currentState = GameState::MENU;
 
-    sf::Texture menuBgTexture;
-    std::string menuBgPath = findPic("menu_background.jpg");
-    if (!menuBgTexture.loadFromFile(menuBgPath)) {
-        menuBgTexture = createTexture(1000, 700, sf::Color::Black);
-    }
-    sf::Sprite menuBgSprite(menuBgTexture);
-
     sf::Font font;
     std::string fontPath = findPic("Sonic_1_Title_Screen_Filled.ttf");
     if (!font.openFromFile(fontPath)) {
@@ -225,9 +213,49 @@ int main() {
     }
     srand(static_cast<unsigned>(time(nullptr)));
 
+    sf::Texture menuBgTexture;
+    std::string menuBgPath = findPic("menu_background.jpg");
+    if (!menuBgTexture.loadFromFile(menuBgPath)) {
+        menuBgTexture = createTexture(1000, 700, sf::Color::Black);
+    }
+    sf::Sprite menuBgSprite(menuBgTexture);
+
     sf::RenderWindow window(sf::VideoMode({ 1000, 700 }), "Zombies vs Plants");
     window.setFramerateLimit(60);
 
+    // Растягиваем фон меню
+    sf::Vector2u menuTexSize = menuBgTexture.getSize();
+    sf::Vector2u menuWinSize = window.getSize();
+    float menuScaleX = static_cast<float>(menuWinSize.x) / menuTexSize.x;
+    float menuScaleY = static_cast<float>(menuWinSize.y) / menuTexSize.y;
+    float menuScale = std::max(menuScaleX, menuScaleY);
+    menuBgSprite.setScale({ menuScale, menuScale });
+    sf::FloatRect menuBounds = menuBgSprite.getGlobalBounds();
+    float menuOffsetX = (menuWinSize.x - menuBounds.size.x) / 2.0f;
+    float menuOffsetY = (menuWinSize.y - menuBounds.size.y) / 2.0f;
+    menuBgSprite.setPosition({ menuOffsetX, menuOffsetY });
+
+    sf::Texture levelsBgTexture;
+    std::string levelsBgPath = findPic("cemetery_bg.jpg");
+    if (!levelsBgTexture.loadFromFile(levelsBgPath)) {
+        levelsBgTexture = createTexture(1000, 700, sf::Color(30, 20, 50));
+    }
+    sf::Sprite levelsBgSprite(levelsBgTexture);
+
+    sf::Vector2u texSize = levelsBgTexture.getSize();
+    sf::Vector2u winSize = window.getSize();
+
+    float scaleX = static_cast<float>(winSize.x) / texSize.x;
+    float scaleY = static_cast<float>(winSize.y) / texSize.y;
+    float scale = std::max(scaleX, scaleY);
+
+    levelsBgSprite.setScale({ scale, scale });
+
+    sf::FloatRect bounds = levelsBgSprite.getGlobalBounds();
+    float offsetX = (winSize.x - bounds.size.x) / 2.0f;
+    float offsetY = (winSize.y - bounds.size.y) / 2.0f;
+    levelsBgSprite.setPosition({ offsetX, offsetY });
+    
     // Загрузка текстур с заглушками
     sf::Texture shooterTex;
     std::string shooterPath = findPic("shooter.png");
@@ -267,12 +295,19 @@ int main() {
 
     // Текстура лопаты
     sf::Texture shovelTex;
-    std::string shovelPath = findPic("лопата.png");
+    std::string shovelPath = findPic("shovel.png");
     if (!shovelTex.loadFromFile(shovelPath)) {
         shovelTex = createTexture(32, 32, sf::Color(200, 150, 100));
     }
     sf::Sprite shovelSprite(shovelTex);
     shovelSprite.setScale({ 0.5f, 0.5f });
+
+    //уровни
+    sf::Texture levelButtonTex;
+    std::string levelButtonPath = findPic("button_lvl.png");
+    if (!levelButtonTex.loadFromFile(levelButtonPath)) {
+        levelButtonTex = createTexture(80, 80, sf::Color(150, 50, 200));
+    }
 
     // Текстура пули
     sf::Texture bulletTex = createTexture(20, 20, sf::Color(255, 255, 0));
@@ -286,7 +321,6 @@ int main() {
     std::vector<Zombie> zombies;
     std::vector<Plant> plants;
     std::vector<Bullet> bullets;
-
 
     // Состояние игры
     SaveData save;
@@ -305,6 +339,7 @@ int main() {
     bool levelComplete = false;
     bool isShovelActive = false;
     PlantType selectedPlant = PlantType::SHOOTER;
+    int pressedLevel = -1;
 
     sf::Clock gameClock;
     sf::Clock spawnClock;
@@ -333,10 +368,10 @@ int main() {
 
             if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
                 if (key->code == sf::Keyboard::Key::Enter && currentState == GameState::MENU) {
-                    currentState = GameState::PLAY;
+                    currentState = GameState::LEVEL_SELECT;
                 }
                 if (key->code == sf::Keyboard::Key::L) {
-                    isShovelActive = !isShovelActive;
+                    isShovelActive = !isShovelActive; 
                 }
                 if (key->code == sf::Keyboard::Key::Num1) selectedPlant = PlantType::SHOOTER;
                 if (key->code == sf::Keyboard::Key::Num2) selectedPlant = PlantType::WALL;
@@ -384,46 +419,80 @@ int main() {
             if (const auto* mouse = event->getIf<sf::Event::MouseButtonPressed>()) {
                 if (mouse->button == sf::Mouse::Button::Left) {
                     sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+
                     // Проверяем, кликнули ли по лопате
                     sf::FloatRect shovelBounds = shovelSprite.getGlobalBounds();
                     if (shovelBounds.contains(static_cast<sf::Vector2f>(mousePos))) {
                         isShovelActive = !isShovelActive;
                     }
-                }
-                if (mouse->button == sf::Mouse::Button::Left && isShovelActive && currentState == GameState::PLAY) {
-                    sf::Vector2i mousePos = sf::Mouse::getPosition(window);
-                    // Проверяем все растения
-                    for (auto it = plants.begin(); it != plants.end(); ++it) {
-                        sf::FloatRect plantBounds = it->sprite.getGlobalBounds();
-                        if (plantBounds.contains(static_cast<sf::Vector2f>(mousePos))) {
-                            it->isAlive = false; // Удаляем растение
-                            break;
-                        }
-                    }
-                }
-                if (mouse->button == sf::Mouse::Button::Left && currentState == GameState::PLAY && !gameOver && !levelComplete && waveActive) {
-                    sf::Vector2i pos = sf::Mouse::getPosition(window);
-                    int gx = (pos.x / 100) * 100;
-                    int gy = (pos.y / 100) * 100;
 
-                    if (gx >= 100 && gx < 900 && gy >= 100 && gy < 600) {
-                        bool occupied = false;
-                        for (const auto& p : plants) {
-                            if (std::abs(p.getX() - static_cast<float>(gx + 50)) < 50 &&
-                                std::abs(p.getY() - static_cast<float>(gy + 50)) < 50) {
-                                occupied = true;
+                    // ВЫБОР УРОВНЯ
+                    if (currentState == GameState::LEVEL_SELECT) {
+                        float positionsX[5] = { 150, 400, 650, 275, 525 };
+                        float positionsY[5] = { 200, 200, 200, 350, 350 };
+                        for (int i = 0; i < 5; i++) {
+                            sf::Sprite button(levelButtonTex);
+                            button.setScale({ 0.13f, 0.13f });
+                            button.setPosition({ positionsX[i], positionsY[i] });
+
+                            if (button.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePos))) {
+                                currentLevel = i + 1;
+                                zombiesToKill = 5 + currentLevel * 2;
+                                zombiesKilled = 0;
+                                waveActive = true;
+                                gameOver = false;
+                                levelComplete = false;
+                                currentState = GameState::PLAY;
                                 break;
                             }
                         }
-                        if (!occupied) {
-                            if (selectedPlant == PlantType::SHOOTER) {
-                                plants.emplace_back(selectedPlant, shooterTex, static_cast<float>(gx), static_cast<float>(gy));
+
+                        // Кнопка "Назад"
+                        sf::FloatRect backRect;
+                        backRect.position = sf::Vector2f(450, 580);
+                        backRect.size = sf::Vector2f(120, 40);
+                        if (backRect.contains(static_cast<sf::Vector2f>(mousePos))) {
+                            currentState = GameState::MENU;
+                        }
+                    }
+                    if (currentState != GameState::PLAY)
+                        continue;
+
+                    // Удаление лопатой
+                    if (isShovelActive && currentState == GameState::PLAY) {
+                        for (auto it = plants.begin(); it != plants.end(); ++it) {
+                            sf::FloatRect plantBounds = it->sprite.getGlobalBounds();
+                            if (plantBounds.contains(static_cast<sf::Vector2f>(mousePos))) {
+                                it->isAlive = false;
+                                break;
                             }
-                            else if (selectedPlant == PlantType::WALL) {
-                                plants.emplace_back(selectedPlant, wallTex, static_cast<float>(gx), static_cast<float>(gy));
+                        }
+                    }
+
+                    // Посадка растений
+                    if (currentState == GameState::PLAY && !gameOver && !levelComplete && waveActive) {
+                        int gx = (mousePos.x / 100) * 100;
+                        int gy = (mousePos.y / 100) * 100;
+
+                        if (gx >= 100 && gx < 900 && gy >= 100 && gy < 600) {
+                            bool occupied = false;
+                            for (const auto& p : plants) {
+                                if (std::abs(p.getX() - static_cast<float>(gx + 50)) < 50 &&
+                                    std::abs(p.getY() - static_cast<float>(gy + 50)) < 50) {
+                                    occupied = true;
+                                    break;
+                                }
                             }
-                            else if (selectedPlant == PlantType::SLOWER) {
-                                plants.emplace_back(selectedPlant, slowerTex, static_cast<float>(gx), static_cast<float>(gy));
+                            if (!occupied) {
+                                if (selectedPlant == PlantType::SHOOTER) {
+                                    plants.emplace_back(selectedPlant, shooterTex, static_cast<float>(gx), static_cast<float>(gy));
+                                }
+                                else if (selectedPlant == PlantType::WALL) {
+                                    plants.emplace_back(selectedPlant, wallTex, static_cast<float>(gx), static_cast<float>(gy));
+                                }
+                                else if (selectedPlant == PlantType::SLOWER) {
+                                    plants.emplace_back(selectedPlant, slowerTex, static_cast<float>(gx), static_cast<float>(gy));
+                                }
                             }
                         }
                     }
@@ -514,6 +583,8 @@ int main() {
                     [](const Plant& p) { return !p.isAlive; }), plants.end());
             }
         }
+
+        window.clear(sf::Color(34, 139, 34));
         // ОТРИСОВКА
         if (currentState == GameState::PLAY) {
             window.clear(sf::Color(34, 139, 34));
@@ -552,7 +623,7 @@ int main() {
             shovelSprite.setScale({ 0.13f, 0.13f });
             shovelSprite.setPosition({ -15, 100 }); 
             if (isShovelActive) {
-                shovelSprite.setColor(sf::Color::Yellow); 
+                shovelSprite.setColor(sf::Color::Yellow);
             }
             else {
                 shovelSprite.setColor(sf::Color::White);
@@ -598,6 +669,48 @@ int main() {
             playText.setPosition({ 500, 350 });
 
             window.draw(playText);
+        }
+
+        if (currentState == GameState::LEVEL_SELECT) {
+            window.draw(levelsBgSprite); 
+
+            sf::Text title(font);
+            title.setString("SELECT LEVEL");
+            title.setCharacterSize(50);
+            title.setFillColor(sf::Color::White);
+            title.setOrigin({ title.getLocalBounds().size.x / 2, title.getLocalBounds().size.y / 2 });
+            title.setPosition({ 500, 80 });
+            window.draw(title);
+
+            // Позиции кнопок
+            float positionsX[5] = { 150, 400, 650, 275, 525 };
+            float positionsY[5] = { 200, 200, 200, 350, 350 };
+
+            for (int i = 0; i < 5; i++) {
+                sf::Sprite button(levelButtonTex);
+                button.setScale({ 0.13f, 0.13f });
+                button.setPosition({ positionsX[i], positionsY[i] });
+                window.draw(button);
+
+                // Цифра уровня поверх кнопки
+                sf::Text levelNum(font);
+                levelNum.setString(std::to_string(i + 1));
+                levelNum.setCharacterSize(30);
+                levelNum.setFillColor(sf::Color::White);
+                sf::FloatRect btnBounds = button.getGlobalBounds();
+                levelNum.setOrigin({ levelNum.getLocalBounds().size.x / 2, levelNum.getLocalBounds().size.y / 2 });
+                levelNum.setPosition({ btnBounds.position.x + btnBounds.size.x / 2, btnBounds.position.y + btnBounds.size.y / 2 });
+                window.draw(levelNum);
+            }
+
+            // Кнопка "Назад"
+            sf::Text backText(font);
+            backText.setString("BACK");
+            backText.setCharacterSize(30);
+            backText.setFillColor(sf::Color::White);
+            backText.setOrigin({ backText.getLocalBounds().size.x / 2, backText.getLocalBounds().size.y / 2 });
+            backText.setPosition({ 500, 600 });
+            window.draw(backText);
         }
 
         window.display();
