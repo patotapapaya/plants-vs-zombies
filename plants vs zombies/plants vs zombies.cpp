@@ -6,6 +6,7 @@
 #include <ctime>
 #include <cmath>
 #include <fstream>
+#include <memory>
 #include <windows.h>
 
 enum class ZombieType { NORMAL, FAST, TOUGH };
@@ -39,6 +40,7 @@ public:
         : sprite(texture), type(t), isDead(false), slowTimer(0.0f),
         health(3.0f), speed(-35.0f), originalSpeed(-35.0f)
     {
+        // Получаем размер текстуры
         sf::Vector2u texSize = texture.getSize();
 
         switch (t) {
@@ -66,7 +68,7 @@ public:
         sf::FloatRect bounds = sprite.getLocalBounds();
         sprite.setOrigin({ bounds.size.x / 2, bounds.size.y / 2 });
 
-        // Ставим в центр клетки 
+        // Ставим в центр клетки
         sprite.setPosition({ startX + 50, startY + 50 });
 
         // Используем цветовую замену только для резервных текстур
@@ -90,10 +92,12 @@ public:
             if (slowTimer > 0) {
                 speed = originalSpeed * 0.5f;
                 slowTimer -= deltaTime;
+                // При замедлении делаем синеватый оттенок поверх текстуры
                 sprite.setColor(sf::Color(150, 200, 255));
             }
             else {
                 speed = originalSpeed;
+                // Возвращаем белый цвет
                 sprite.setColor(sf::Color::White);
             }
             sprite.move({ speed * deltaTime, 0.0f });
@@ -191,7 +195,35 @@ struct SaveData {
     int level = 1;
     int score = 0;
     int highestLevel = 1;
+    bool levelsCompleted[5] = { false, false, false, false, false };
 };
+void saveGame(const SaveData& save, const std::string& fileName)
+{
+    std::ofstream file(fileName, std::ios::binary);
+
+    if (file.is_open())
+    {
+        file.write(reinterpret_cast<const char*>(&save), sizeof(save));
+        file.close();
+    }
+}
+void loadGame(SaveData& save, const std::string& fileName)
+{
+    std::ifstream file(fileName, std::ios::binary);
+
+    if (file.is_open())
+    {
+        file.read(reinterpret_cast<char*>(&save), sizeof(save));
+        file.close();
+    }
+    else
+    {
+        save.level = 1;
+        save.score = 0;
+        save.highestLevel = 1;
+        for (int i = 0; i < 5; i++) save.levelsCompleted[i] = false;
+    }
+}
 std::string findPic(const std::string& name) {
     char buffer[MAX_PATH];
     GetModuleFileNameA(NULL, buffer, MAX_PATH);
@@ -211,6 +243,9 @@ std::string findPic(const std::string& name) {
 int main() {
     GameState currentState = GameState::MENU;
 
+    sf::RenderWindow window(sf::VideoMode({ 1000, 700 }), "Zombies vs Plants");
+    window.setFramerateLimit(60);
+
     sf::Font font;
     std::string fontPath = findPic("Sonic_1_Title_Screen_Filled.ttf");
     if (!font.openFromFile(fontPath)) {
@@ -224,9 +259,6 @@ int main() {
         menuBgTexture = createTexture(1000, 700, sf::Color::Black);
     }
     sf::Sprite menuBgSprite(menuBgTexture);
-
-    sf::RenderWindow window(sf::VideoMode({ 1000, 700 }), "Zombies vs Plants");
-    window.setFramerateLimit(60);
 
     // Растягиваем фон меню
     sf::Vector2u menuTexSize = menuBgTexture.getSize();
@@ -334,7 +366,14 @@ int main() {
         levelButtonDarkTex = createTexture(80, 80, sf::Color(100, 30, 150));
     }
 
-    // Загружаем текстуру для кнопки "Назад"
+    // Кнопки заблокированных уровней
+    sf::Texture levelLockedTex;
+    std::string levelLockedPath = findPic("locked_btn.png");
+    if (!levelLockedTex.loadFromFile(levelLockedPath)) {
+        levelLockedTex = createTexture(80, 80, sf::Color(80, 80, 80));
+    }
+
+    // Кнопка "back"
     sf::Texture backButtonTex;
     std::string backButtonPath = findPic("stone_button.png");
     if (!backButtonTex.loadFromFile(backButtonPath)) {
@@ -342,7 +381,27 @@ int main() {
     }
     sf::Sprite backButtonSprite(backButtonTex);
     backButtonSprite.setScale({ 0.3f, 0.3f });
-    backButtonSprite.setPosition({ 880.0f, 5.0f }); 
+    backButtonSprite.setPosition({ 880.0f, 5.0f });
+
+    // Кнопка "save"
+    sf::Texture saveButtonTex;
+    std::string saveButtonPath = findPic("stone_button.png");
+    if (!saveButtonTex.loadFromFile(saveButtonPath)) {
+        saveButtonTex = createTexture(60, 40, sf::Color(50, 200, 50));
+    }
+    sf::Sprite saveButtonSprite(saveButtonTex);
+    saveButtonSprite.setScale({ 0.3f, 0.3f });
+    saveButtonSprite.setPosition({ 760.0f, 5.0f });
+
+    // Кнопка "load"
+    sf::Texture loadButtonTex;
+    std::string loadButtonPath = findPic("hand_btn.png");
+    if (!loadButtonTex.loadFromFile(loadButtonPath)) {
+        loadButtonTex = createTexture(60, 40, sf::Color(50, 50, 200));
+    }
+    sf::Sprite loadButtonSprite(loadButtonTex);
+    loadButtonSprite.setScale({ 0.2f, 0.2f });
+    loadButtonSprite.setPosition({ 500.0f, 600.0f });
 
     // Текстура пули
     sf::Texture bulletTex = createTexture(20, 20, sf::Color(255, 255, 0));
@@ -354,7 +413,7 @@ int main() {
 
     // Иконки для панели выбора 
     sf::Sprite shooterIcon(shooterTex);
-    shooterIcon.setScale({ 0.08f, 0.08f }); 
+    shooterIcon.setScale({ 0.08f, 0.08f });
     shooterIcon.setPosition({ 190.0f, 10.0f });
 
     sf::Sprite wallIcon(wallTex);
@@ -367,11 +426,8 @@ int main() {
 
     // Состояние игры
     SaveData save;
-    std::ifstream loadFile("save.dat", std::ios::binary);
-    if (loadFile.is_open()) {
-        loadFile.read(reinterpret_cast<char*>(&save), sizeof(save));
-        loadFile.close();
-    }
+    std::string currentSaveFile = "save1.dat";
+    loadGame(save, currentSaveFile);
 
     int score = save.score;
     int currentLevel = save.highestLevel;
@@ -381,6 +437,9 @@ int main() {
     bool gameOver = false;
     bool levelComplete = false;
     bool isShovelActive = false;
+    bool showSaveSlots = false;
+    bool showLoadSlots = false;
+
     PlantType selectedPlant = PlantType::NONE;
 
     sf::Clock gameClock;
@@ -392,7 +451,9 @@ int main() {
     selector.setOutlineColor(sf::Color::White);
     selector.setOutlineThickness(2.0f);
 
-    // Основной цикл
+    // Переменная для отслеживания, все ли уровни пройдены
+    bool allLevelsCompleted = false;
+
     while (window.isOpen()) {
         float deltaTime = gameClock.restart().asSeconds();
         if (deltaTime > 0.033f) deltaTime = 0.033f;
@@ -400,14 +461,9 @@ int main() {
         // СОБЫТИЯ
         while (const auto event = window.pollEvent()) {
             if (event->is<sf::Event::Closed>()) {
-                std::ofstream saveFile("save.dat", std::ios::binary);
-                if (saveFile.is_open()) {
-                    saveFile.write(reinterpret_cast<char*>(&save), sizeof(save));
-                    saveFile.close();
-                }
+                saveGame(save, currentSaveFile);
                 window.close();
             }
-            //блок обработки клавиш
             if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
                 if (key->code == sf::Keyboard::Key::Enter && currentState == GameState::MENU) {
                     currentState = GameState::LEVEL_SELECT;
@@ -415,20 +471,20 @@ int main() {
                 if (key->code == sf::Keyboard::Key::L) {
                     isShovelActive = !isShovelActive;
                     if (isShovelActive) {
-                        selectedPlant = PlantType::NONE; 
+                        selectedPlant = PlantType::NONE;
                     }
                 }
                 if (key->code == sf::Keyboard::Key::Num1) {
                     selectedPlant = PlantType::SHOOTER;
-                    isShovelActive = false; 
+                    isShovelActive = false;
                 }
                 if (key->code == sf::Keyboard::Key::Num2) {
                     selectedPlant = PlantType::WALL;
-                    isShovelActive = false; 
+                    isShovelActive = false;
                 }
                 if (key->code == sf::Keyboard::Key::Num3) {
                     selectedPlant = PlantType::SLOWER;
-                    isShovelActive = false; 
+                    isShovelActive = false;
                 }
 
                 if (key->code == sf::Keyboard::Key::R && gameOver) {
@@ -446,9 +502,14 @@ int main() {
                     save.score = score;
                     save.highestLevel = currentLevel;
                     save.level = currentLevel;
+
+                    for (int i = 0; i < 5; i++) save.levelsCompleted[i] = false;
+                    allLevelsCompleted = false;
                 }
 
                 if (key->code == sf::Keyboard::Key::N && levelComplete && currentLevel < 5) {
+                    save.levelsCompleted[currentLevel - 1] = true;
+
                     currentLevel++;
                     zombiesToKill = 5 + currentLevel * 2;
                     zombiesKilled = 0;
@@ -457,17 +518,9 @@ int main() {
                     save.highestLevel = currentLevel;
                     save.score = score;
                     save.level = currentLevel;
-                    std::ofstream sf("save.dat", std::ios::binary);
-                    if (sf.is_open()) sf.write(reinterpret_cast<char*>(&save), sizeof(save));
+                    saveGame(save, currentSaveFile);
                 }
 
-                if (key->code == sf::Keyboard::Key::S) {
-                    save.score = score;
-                    save.highestLevel = currentLevel;
-                    save.level = currentLevel;
-                    std::ofstream sf("save.dat", std::ios::binary);
-                    if (sf.is_open()) sf.write(reinterpret_cast<char*>(&save), sizeof(save));
-                }
                 if (key->code == sf::Keyboard::Key::Escape) {
                     selectedPlant = PlantType::NONE;
                     isShovelActive = false;
@@ -476,124 +529,214 @@ int main() {
 
             if (const auto* mouse = event->getIf<sf::Event::MouseButtonPressed>()) {
                 if (mouse->button == sf::Mouse::Button::Left) {
-                    sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+                    sf::Vector2f mousePos = static_cast<sf::Vector2f>(sf::Mouse::getPosition(window));
 
-                    // Проверяем, кликнули ли по лопате
-                    sf::FloatRect shovelBounds = shovelSprite.getGlobalBounds();
-                    if (shovelBounds.contains(static_cast<sf::Vector2f>(mousePos))) {
-                        isShovelActive = !isShovelActive;
-                        if (isShovelActive) {
-                            selectedPlant = PlantType::NONE; 
-                        }
-                    }
-                    // Кнопка "back" в вверхнем меню
-                    sf::FloatRect backButtonBounds = backButtonSprite.getGlobalBounds();
-                    if (backButtonBounds.contains(static_cast<sf::Vector2f>(mousePos))) {
-                        currentState = GameState::LEVEL_SELECT;
-                        zombies.clear();
-                        plants.clear();
-                        bullets.clear();
-                        gameOver = false;
-                        levelComplete = false;
-                        waveActive = true;
-                        zombiesKilled = 0;
-                        isShovelActive = false;
-                        selectedPlant = PlantType::NONE;
-                        continue; // Выходим из обработчика, чтобы не сажать растение
-                    }
-                    // ВЫБОР УРОВНЯ
-                    if (currentState == GameState::LEVEL_SELECT) {
-                        float positionsX[5] = { 150, 400, 650, 275, 525 };
-                        float positionsY[5] = { 200, 200, 200, 350, 350 };
-                        for (int i = 0; i < 5; i++) {
-                            sf::Sprite button(levelButtonTex);
-                            button.setScale({ 0.13f, 0.13f });
-                            button.setPosition({ positionsX[i], positionsY[i] });
+                    if (showSaveSlots)
+                    {
+                        sf::FloatRect slot1;
+                        slot1.position = { 300.f, 200.f };
+                        slot1.size = { 200.f, 60.f };
 
-                            if (button.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePos))) {
-                                currentLevel = i + 1;
-                                zombiesToKill = 5 + currentLevel * 2;
-                                zombiesKilled = 0;
-                                waveActive = true;
-                                gameOver = false;
-                                levelComplete = false;
-                                currentState = GameState::PLAY;
+                        sf::FloatRect slot2;
+                        slot2.position = { 300.f, 300.f };
+                        slot2.size = { 200.f, 60.f };
 
-                                // Сбрасываем выбор режимов при переходе на уровень
-                                isShovelActive = false;
-                                selectedPlant = PlantType::NONE;
-                                break;
-                            }
-                        }
-                        // Отображение текущего режима
-                        sf::Text modeText(font);
-                        modeText.setCharacterSize(16);
-                        modeText.setFillColor(sf::Color::White);
-                        modeText.setPosition({ 10.0f, 670.0f });
+                        sf::FloatRect slot3;
+                        slot3.position = { 300.f, 400.f };
+                        slot3.size = { 200.f, 60.f };
 
-                        if (isShovelActive) {
-                            modeText.setString("Mode: SHOVEL");
-                            modeText.setFillColor(sf::Color::Yellow);
+                        if (slot1.contains(mousePos))
+                        {
+                            saveGame(save, "save1.dat");
+                            showSaveSlots = false;
                         }
-                        else if (selectedPlant != PlantType::NONE) {
-                            std::string plantName;
-                            if (selectedPlant == PlantType::SHOOTER) plantName = "SHOOTER";
-                            else if (selectedPlant == PlantType::WALL) plantName = "WALL";
-                            else if (selectedPlant == PlantType::SLOWER) plantName = "SLOWER";
-                            modeText.setString("Mode: " + plantName);
-                            modeText.setFillColor(sf::Color::Cyan);
+                        else if (slot2.contains(mousePos))
+                        {
+                            saveGame(save, "save2.dat");
+                            showSaveSlots = false;
                         }
-                        else {
-                            modeText.setString("Mode: NONE");
-                            modeText.setFillColor(sf::Color(128, 128, 128));
+                        else if (slot3.contains(mousePos))
+                        {
+                            saveGame(save, "save3.dat");
+                            showSaveSlots = false;
                         }
-                        window.draw(modeText);
-
-                        // Кнопка "Назад"
-                        sf::FloatRect backRect;
-                        backRect.position = sf::Vector2f(450, 580);
-                        backRect.size = sf::Vector2f(120, 40);
-                        if (backRect.contains(static_cast<sf::Vector2f>(mousePos))) {
-                            currentState = GameState::MENU;
-                        }
-                    }
-                    if (currentState != GameState::PLAY)
                         continue;
-
-                    // Удаление лопатой
-                    if (isShovelActive && currentState == GameState::PLAY) {
-                        for (auto it = plants.begin(); it != plants.end(); ++it) {
-                            sf::FloatRect plantBounds = it->sprite.getGlobalBounds();
-                            if (plantBounds.contains(static_cast<sf::Vector2f>(mousePos))) {
-                                it->isAlive = false;
-                                break;
-                            }
-                        }
                     }
 
-                    // Посадка растений
-                    if (currentState == GameState::PLAY && !gameOver && !levelComplete && waveActive) {
-                        int gx = (mousePos.x / 100) * 100;
-                        int gy = (mousePos.y / 100) * 100;
+                    if (showLoadSlots)
+                    {
+                        sf::FloatRect slot1;
+                        slot1.position = { 300.f, 200.f };
+                        slot1.size = { 200.f, 60.f };
 
-                        if (gx >= 100 && gx < 900 && gy >= 100 && gy < 600) {
-                            bool occupied = false;
-                            for (const auto& p : plants) {
-                                if (std::abs(p.getX() - static_cast<float>(gx + 50)) < 50 &&
-                                    std::abs(p.getY() - static_cast<float>(gy + 50)) < 50) {
-                                    occupied = true;
+                        sf::FloatRect slot2;
+                        slot2.position = { 300.f, 300.f };
+                        slot2.size = { 200.f, 60.f };
+
+                        sf::FloatRect slot3;
+                        slot3.position = { 300.f, 400.f };
+                        slot3.size = { 200.f, 60.f };
+
+                        if (slot1.contains(mousePos))
+                        {
+                            loadGame(save, "save1.dat");
+                            showLoadSlots = false;
+
+                            // Проверяем все ли уровни пройдены после загрузки
+                            allLevelsCompleted = true;
+                            for (int i = 0; i < 5; i++) {
+                                if (!save.levelsCompleted[i]) {
+                                    allLevelsCompleted = false;
                                     break;
                                 }
                             }
-                            if (!occupied) {
-                                if (selectedPlant == PlantType::SHOOTER) {
-                                    plants.emplace_back(selectedPlant, shooterTex, static_cast<float>(gx), static_cast<float>(gy));
+                        }
+                        else if (slot2.contains(mousePos))
+                        {
+                            loadGame(save, "save2.dat");
+                            showLoadSlots = false;
+
+                            allLevelsCompleted = true;
+                            for (int i = 0; i < 5; i++) {
+                                if (!save.levelsCompleted[i]) {
+                                    allLevelsCompleted = false;
+                                    break;
                                 }
-                                else if (selectedPlant == PlantType::WALL) {
-                                    plants.emplace_back(selectedPlant, wallTex, static_cast<float>(gx), static_cast<float>(gy));
+                            }
+                        }
+                        else if (slot3.contains(mousePos))
+                        {
+                            loadGame(save, "save3.dat");
+                            showLoadSlots = false;
+
+                            allLevelsCompleted = true;
+                            for (int i = 0; i < 5; i++) {
+                                if (!save.levelsCompleted[i]) {
+                                    allLevelsCompleted = false;
+                                    break;
                                 }
-                                else if (selectedPlant == PlantType::SLOWER) {
-                                    plants.emplace_back(selectedPlant, slowerTex, static_cast<float>(gx), static_cast<float>(gy));
+                            }
+                        }
+                        continue;
+                    }
+
+                    if (currentState == GameState::PLAY) {
+                        if (saveButtonSprite.getGlobalBounds().contains(mousePos)) {
+                            showSaveSlots = true;
+                            continue;
+                        }
+
+                        if (backButtonSprite.getGlobalBounds().contains(mousePos)) {
+                            currentState = GameState::LEVEL_SELECT;
+                            zombies.clear();
+                            plants.clear();
+                            bullets.clear();
+                            gameOver = false;
+                            levelComplete = false;
+                            waveActive = true;
+                            zombiesKilled = 0;
+                            isShovelActive = false;
+                            selectedPlant = PlantType::NONE;
+                            continue;
+                        }
+
+                        sf::FloatRect shovelBounds = shovelSprite.getGlobalBounds();
+                        if (shovelBounds.contains(mousePos)) {
+                            isShovelActive = !isShovelActive;
+                            if (isShovelActive) {
+                                selectedPlant = PlantType::NONE;
+                            }
+                            continue;
+                        }
+
+                        if (isShovelActive) {
+                            for (auto it = plants.begin(); it != plants.end(); ++it) {
+                                sf::FloatRect plantBounds = it->sprite.getGlobalBounds();
+                                if (plantBounds.contains(mousePos)) {
+                                    it->isAlive = false;
+                                    break;
+                                }
+                            }
+                            continue;
+                        }
+
+                        if (!gameOver && !levelComplete && waveActive) {
+                            int gx = (static_cast<int>(mousePos.x) / 100) * 100;
+                            int gy = (static_cast<int>(mousePos.y) / 100) * 100;
+
+                            if (gx >= 100 && gx < 900 && gy >= 100 && gy < 600) {
+                                bool occupied = false;
+                                for (const auto& p : plants) {
+                                    if (std::abs(p.getX() - static_cast<float>(gx + 50)) < 50 &&
+                                        std::abs(p.getY() - static_cast<float>(gy + 50)) < 50) {
+                                        occupied = true;
+                                        break;
+                                    }
+                                }
+                                if (!occupied) {
+                                    if (selectedPlant == PlantType::SHOOTER) {
+                                        plants.emplace_back(selectedPlant, shooterTex, static_cast<float>(gx), static_cast<float>(gy));
+                                    }
+                                    else if (selectedPlant == PlantType::WALL) {
+                                        plants.emplace_back(selectedPlant, wallTex, static_cast<float>(gx), static_cast<float>(gy));
+                                    }
+                                    else if (selectedPlant == PlantType::SLOWER) {
+                                        plants.emplace_back(selectedPlant, slowerTex, static_cast<float>(gx), static_cast<float>(gy));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (currentState == GameState::LEVEL_SELECT) {
+                        if (loadButtonSprite.getGlobalBounds().contains(mousePos)) {
+                            showLoadSlots = true;
+                            continue;
+                        }
+
+                        sf::FloatRect backRect;
+                        backRect.position = sf::Vector2f(450, 580);
+                        backRect.size = sf::Vector2f(120, 40);
+                        if (backRect.contains(mousePos)) {
+                            currentState = GameState::MENU;
+                            continue;
+                        }
+
+                        float positionsX[5] = { 150, 400, 650, 275, 525 };
+                        float positionsY[5] = { 200, 200, 200, 350, 350 };
+                        for (int i = 0; i < 5; i++) {
+                            // Если все уровни пройдены - все разблокированы
+                            bool isLocked;
+                            if (allLevelsCompleted) {
+                                isLocked = false; 
+                            }
+                            else {
+                                isLocked = save.levelsCompleted[i]; // Иначе проверяем пройден ли
+                            }
+
+                            std::unique_ptr<sf::Sprite> button;
+                            if (isLocked) {
+                                button = std::make_unique<sf::Sprite>(levelLockedTex);
+                            }
+                            else {
+                                button = std::make_unique<sf::Sprite>(levelButtonTex);
+                            }
+                            button->setScale({ 0.13f, 0.13f });
+                            button->setPosition({ positionsX[i], positionsY[i] });
+
+                            if (button->getGlobalBounds().contains(mousePos)) {
+                                if (!isLocked) {
+                                    currentLevel = i + 1;
+                                    zombiesToKill = 5 + currentLevel * 2;
+                                    zombiesKilled = 0;
+                                    waveActive = true;
+                                    gameOver = false;
+                                    levelComplete = false;
+                                    currentState = GameState::PLAY;
+
+                                    isShovelActive = false;
+                                    selectedPlant = PlantType::NONE;
+                                    break;
                                 }
                             }
                         }
@@ -601,7 +744,6 @@ int main() {
                 }
             }
         }
-
         // ЛОГИКА
         if (currentState == GameState::PLAY) {
             if (!gameOver && !levelComplete) {
@@ -630,6 +772,29 @@ int main() {
                     levelComplete = true;
                     save.highestLevel = currentLevel;
                     save.score = score;
+
+                    // Отмечаем уровень как пройденный
+                    save.levelsCompleted[currentLevel - 1] = true;
+
+                    // Проверяем, все ли уровни пройдены
+                    allLevelsCompleted = true;
+                    for (int i = 0; i < 5; i++) {
+                        if (!save.levelsCompleted[i]) {
+                            allLevelsCompleted = false;
+                            break;
+                        }
+                    }
+
+                    // Если все уровни пройдены - сбрасываем
+                    if (allLevelsCompleted) {
+                        // Сбрасываем все уровни, чтобы можно было играть заново
+                        for (int i = 0; i < 5; i++) {
+                            save.levelsCompleted[i] = false;
+                        }
+                        allLevelsCompleted = false;
+                        // Сохраняем изменения
+                        saveGame(save, currentSaveFile);
+                    }
                 }
 
                 for (auto& z : zombies) z.update(deltaTime);
@@ -687,57 +852,40 @@ int main() {
         }
 
         window.clear(sf::Color(34, 139, 34));
-
         // ОТРИСОВКА
         if (currentState == GameState::PLAY) {
             window.clear(sf::Color(34, 139, 34));
             window.draw(gameBgSprite);
 
-            // сетка поля
-            /*for (int i = 100; i < 900; i += 100) {
-                for (int j = 100; j < 600; j += 100) {
-                    sf::RectangleShape cell(sf::Vector2f(90.0f, 90.0f));
-                    cell.setPosition({ static_cast<float>(i) + 5, static_cast<float>(j) + 5 });
-                    cell.setFillColor(sf::Color::Transparent);
-                    cell.setOutlineColor(sf::Color(80, 80, 80));
-                    cell.setOutlineThickness(1.0f);
-                    window.draw(cell);
-                }
-            }*/
-
-            // Рисуем иконки
             window.draw(shooterIcon);
             window.draw(wallIcon);
             window.draw(slowerIcon);
 
-            // Подписи клавиш 
             sf::Text hint1(font);
             hint1.setString("1");
             hint1.setCharacterSize(14);
             hint1.setFillColor(sf::Color::White);
-            hint1.setPosition({ 35.0f, 683.0f });
+            hint1.setPosition({ 35.0f, 700.0f });
             window.draw(hint1);
 
             sf::Text hint2(font);
             hint2.setString("2");
             hint2.setCharacterSize(14);
             hint2.setFillColor(sf::Color::White);
-            hint2.setPosition({ 95.0f, 683.0f });
+            hint2.setPosition({ 95.0f, 700.0f });
             window.draw(hint2);
 
             sf::Text hint3(font);
             hint3.setString("3");
             hint3.setCharacterSize(14);
             hint3.setFillColor(sf::Color::White);
-            hint3.setPosition({ 155.0f, 683.0f });
+            hint3.setPosition({ 155.0f, 700.0f });
             window.draw(hint3);
-
 
             for (auto& p : plants) window.draw(p.sprite);
             for (auto& z : zombies) window.draw(z.sprite);
             for (auto& b : bullets) window.draw(b.sprite);
 
-            // Позиции селектора под иконками
             float selectorX;
             if (selectedPlant == PlantType::WALL) selectorX = 75.0f;
             else if (selectedPlant == PlantType::SLOWER) selectorX = 135.0f;
@@ -747,27 +895,6 @@ int main() {
             selector.setPosition({ selectorX, 648.0f });
             window.draw(selector);
 
-            // Фон для счета
-            //sf::RectangleShape scoreBg(sf::Vector2f(180.0f, 25.0f));
-            //scoreBg.setFillColor(sf::Color(0, 0, 0, 150));
-            //scoreBg.setPosition({ 10.0f, 10.0f });
-            //window.draw(scoreBg);
-
-            //// Текст счета
-            //sf::Text scoreText(font);
-            //scoreText.setString("Score " + std::to_string(score));
-            //scoreText.setCharacterSize(18);
-            //scoreText.setFillColor(sf::Color::White);
-            //scoreText.setPosition({ 15.0f, 12.0f });
-            //window.draw(scoreText);
-
-            //// Фон для уровня
-            //sf::RectangleShape levelBg(sf::Vector2f(150.0f, 42.0f));
-            //levelBg.setFillColor(sf::Color(0, 0, 0, 150));
-            //levelBg.setPosition({ 10.0f, 12.0f });
-            //window.draw(levelBg);
-
-            // Текст уровня
             sf::Text levelText(font);
             levelText.setString("Lvl " + std::to_string(currentLevel));
             levelText.setCharacterSize(35);
@@ -776,40 +903,89 @@ int main() {
             levelText.setStyle(sf::Text::Bold);
             window.draw(levelText);
 
-            // Иконка лопаты
             shovelSprite.setScale({ 0.13f, 0.13f });
-            shovelSprite.setPosition({ -15, 100 }); 
+            shovelSprite.setPosition({ -15, 100 });
             if (isShovelActive) {
-                shovelSprite.setColor(sf::Color::Yellow); 
+                shovelSprite.setColor(sf::Color::Yellow);
             }
             else {
                 shovelSprite.setColor(sf::Color::White);
             }
             window.draw(shovelSprite);
 
-            window.draw(backButtonSprite); 
-            // Текст "BACK" на кнопке в верхнем меню
+            window.draw(backButtonSprite);
+            window.draw(saveButtonSprite);
+
             sf::Text backText(font);
             backText.setString("BACK");
             backText.setCharacterSize(20);
             backText.setFillColor(sf::Color(60, 60, 60));
-            //backText.setStyle(sf::Text::Bold);
 
-            // Центрируем текст на кнопке
             sf::FloatRect btnBounds = backButtonSprite.getGlobalBounds();
             backText.setOrigin({ backText.getLocalBounds().size.x / 2, backText.getLocalBounds().size.y / 2 });
             backText.setPosition({
                 btnBounds.position.x + btnBounds.size.x / 2,
                 btnBounds.position.y + btnBounds.size.y / 2
                 });
-
             window.draw(backText);
+
+            sf::Text saveText(font);
+            saveText.setString("SAVE");
+            saveText.setCharacterSize(20);
+            saveText.setFillColor(sf::Color(60, 60, 60));
+
+            sf::FloatRect saveBounds = saveButtonSprite.getGlobalBounds();
+            saveText.setOrigin({ saveText.getLocalBounds().size.x / 2, saveText.getLocalBounds().size.y / 2 });
+            saveText.setPosition({
+                saveBounds.position.x + saveBounds.size.x / 2,
+                saveBounds.position.y + saveBounds.size.y / 2
+                });
+            window.draw(saveText);
+
+            sf::Text modeText(font);
+            modeText.setCharacterSize(16);
+            modeText.setFillColor(sf::Color::White);
+            modeText.setPosition({ 10.0f, 670.0f });
+
+            if (isShovelActive) {
+                modeText.setString("Mode: SHOVEL");
+                modeText.setFillColor(sf::Color::Yellow);
+            }
+            else if (selectedPlant != PlantType::NONE) {
+                std::string plantName;
+                if (selectedPlant == PlantType::SHOOTER) plantName = "SHOOTER";
+                else if (selectedPlant == PlantType::WALL) plantName = "WALL";
+                else if (selectedPlant == PlantType::SLOWER) plantName = "SLOWER";
+                modeText.setString("Mode: " + plantName);
+                modeText.setFillColor(sf::Color::Cyan);
+            }
+            else {
+                modeText.setString("Mode: NONE");
+                modeText.setFillColor(sf::Color(128, 128, 128));
+            }
+            window.draw(modeText);
 
             if (gameOver) {
                 sf::RectangleShape overlay(sf::Vector2f(400.0f, 150.0f));
                 overlay.setFillColor(sf::Color(0, 0, 0, 220));
                 overlay.setPosition({ 300.0f, 280.0f });
                 window.draw(overlay);
+
+                sf::Text gameOverText(font);
+                gameOverText.setString("GAME OVER");
+                gameOverText.setCharacterSize(40);
+                gameOverText.setFillColor(sf::Color::Red);
+                gameOverText.setOrigin({ gameOverText.getLocalBounds().size.x / 2, gameOverText.getLocalBounds().size.y / 2 });
+                gameOverText.setPosition({ 500, 320 });
+                window.draw(gameOverText);
+
+                sf::Text restartText(font);
+                restartText.setString("Press R to restart");
+                restartText.setCharacterSize(20);
+                restartText.setFillColor(sf::Color::White);
+                restartText.setOrigin({ restartText.getLocalBounds().size.x / 2, restartText.getLocalBounds().size.y / 2 });
+                restartText.setPosition({ 500, 380 });
+                window.draw(restartText);
             }
 
             if (levelComplete) {
@@ -817,20 +993,46 @@ int main() {
                 overlay.setFillColor(sf::Color(0, 0, 0, 220));
                 overlay.setPosition({ 300.0f, 280.0f });
                 window.draw(overlay);
+
+                sf::Text completeText(font);
+                completeText.setString("LEVEL COMPLETE!");
+                completeText.setCharacterSize(35);
+                completeText.setFillColor(sf::Color::Green);
+                completeText.setOrigin({ completeText.getLocalBounds().size.x / 2, completeText.getLocalBounds().size.y / 2 });
+                completeText.setPosition({ 500, 310 });
+                window.draw(completeText);
+
+                if (currentLevel < 5) {
+                    sf::Text nextText(font);
+                    nextText.setString("Press N for next level");
+                    nextText.setCharacterSize(20);
+                    nextText.setFillColor(sf::Color::White);
+                    nextText.setOrigin({ nextText.getLocalBounds().size.x / 2, nextText.getLocalBounds().size.y / 2 });
+                    nextText.setPosition({ 500, 370 });
+                    window.draw(nextText);
+                }
+                else {
+                    sf::Text winText(font);
+                    winText.setString("YOU WIN! Press BACK");
+                    winText.setCharacterSize(20);
+                    winText.setFillColor(sf::Color::Yellow);
+                    winText.setOrigin({ winText.getLocalBounds().size.x / 2, winText.getLocalBounds().size.y / 2 });
+                    winText.setPosition({ 500, 370 });
+                    window.draw(winText);
+                }
             }
         }
+
         if (currentState == GameState::MENU) {
             window.draw(menuBgSprite);
-            // Текст на главном меню
             sf::Text menuText(font);
             menuText.setString("MAIN MENU");
             menuText.setCharacterSize(60);
             menuText.setFillColor(sf::Color::White);
 
-            // Выравнивание по центру
             sf::FloatRect menuBounds = menuText.getLocalBounds();
             menuText.setOrigin({ menuBounds.size.x / 2, menuBounds.size.y / 2 });
-            menuText.setPosition({ 500, 250 }); 
+            menuText.setPosition({ 500, 250 });
 
             window.draw(menuText);
 
@@ -849,7 +1051,6 @@ int main() {
         if (currentState == GameState::LEVEL_SELECT) {
             window.draw(levelsBgSprite);
 
-            // Заголовок
             sf::Text title(font);
             title.setString("SELECT LEVEL");
             title.setCharacterSize(50);
@@ -858,38 +1059,61 @@ int main() {
             title.setPosition({ 500, 80 });
             window.draw(title);
 
-            // Позиции кнопок
             float positionsX[5] = { 150, 400, 650, 275, 525 };
             float positionsY[5] = { 200, 200, 200, 350, 350 };
 
-            // Получаем позицию мыши
             sf::Vector2i mousePos = sf::Mouse::getPosition(window);
 
             for (int i = 0; i < 5; i++) {
-                sf::Sprite button(levelButtonTex);
-                button.setScale({ 0.13f, 0.13f });
-                button.setPosition({ positionsX[i], positionsY[i] });
-                window.draw(button);
-
-                // Проверяем наведение мыши
-                if (button.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePos))) {
-                    button.setTexture(levelButtonDarkTex); 
-                    button.setScale({ 0.145f, 0.145f });
-                    button.setPosition({ positionsX[i] - 11.4f, positionsY[i] - 10.0f });
+                // Если все уровни пройдены - все разблокированы
+                bool isLocked;
+                if (allLevelsCompleted) {
+                    isLocked = false; // Все разблокированы
                 }
-                window.draw(button);
-                // Цифра уровня
-                sf::Text levelNum(font);
-                levelNum.setString(std::to_string(i + 1));
-                levelNum.setCharacterSize(30);
-                levelNum.setFillColor(sf::Color::White);
-                sf::FloatRect btnBounds = button.getGlobalBounds();
-                levelNum.setOrigin({ levelNum.getLocalBounds().size.x / 2, levelNum.getLocalBounds().size.y / 2 });
-                levelNum.setPosition({ btnBounds.position.x + btnBounds.size.x / 2, btnBounds.position.y + btnBounds.size.y / 2 });
-                window.draw(levelNum);
+                else {
+                    isLocked = save.levelsCompleted[i]; // Иначе проверяем пройден ли
+                }
+
+                std::unique_ptr<sf::Sprite> button;
+                if (isLocked) {
+                    button = std::make_unique<sf::Sprite>(levelLockedTex);
+                }
+                else {
+                    button = std::make_unique<sf::Sprite>(levelButtonTex);
+                }
+                button->setScale({ 0.13f, 0.13f });
+                button->setPosition({ positionsX[i], positionsY[i] });
+
+                if (!isLocked && button->getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePos))) {
+                    button = std::make_unique<sf::Sprite>(levelButtonDarkTex);
+                    button->setScale({ 0.145f, 0.145f });
+                    button->setPosition({ positionsX[i] - 11.4f, positionsY[i] - 10.0f });
+                }
+                window.draw(*button);
+
+                if (!isLocked) {
+                    sf::Text levelNum(font);
+                    levelNum.setString(std::to_string(i + 1));
+                    levelNum.setCharacterSize(30);
+                    levelNum.setFillColor(sf::Color::White);
+                    sf::FloatRect btnBounds = button->getGlobalBounds();
+                    levelNum.setOrigin({ levelNum.getLocalBounds().size.x / 2, levelNum.getLocalBounds().size.y / 2 });
+                    levelNum.setPosition({ btnBounds.position.x + btnBounds.size.x / 2, btnBounds.position.y + btnBounds.size.y / 2 });
+                    window.draw(levelNum);
+                }
+                else {
+
+                    sf::Text lockText(font);
+                    lockText.setString("locked");
+                    lockText.setCharacterSize(24);
+                    lockText.setFillColor(sf::Color::Red);
+                    sf::FloatRect btnBounds = button->getGlobalBounds();
+                    lockText.setOrigin({ lockText.getLocalBounds().size.x / 2, lockText.getLocalBounds().size.y / 2 });
+                    lockText.setPosition({ btnBounds.position.x + btnBounds.size.x / 2, btnBounds.position.y + btnBounds.size.y / 2 });
+                    window.draw(lockText);
+                }
             }
 
-            // Кнопка "Назад"
             sf::Text backText(font);
             backText.setString("BACK");
             backText.setCharacterSize(30);
@@ -897,6 +1121,104 @@ int main() {
             backText.setOrigin({ backText.getLocalBounds().size.x / 2, backText.getLocalBounds().size.y / 2 });
             backText.setPosition({ 500, 600 });
             window.draw(backText);
+
+            loadButtonSprite.setPosition({ 750.0f, 500.0f });
+            window.draw(loadButtonSprite);
+
+            sf::Text loadText(font);
+            loadText.setString("LOAD");
+            loadText.setCharacterSize(24);
+            loadText.setFillColor(sf::Color::White);
+            loadText.setPosition({ 810.f, 550.f });
+
+
+            window.draw(loadText);
+        }
+
+        if (showSaveSlots) {
+            sf::RectangleShape overlay(sf::Vector2f(1000.f, 700.f));
+            overlay.setFillColor(sf::Color(0, 0, 0, 180));
+            window.draw(overlay);
+
+            sf::Text title(font);
+            title.setString("SAVE GAME");
+            title.setCharacterSize(30);
+            title.setFillColor(sf::Color::White);
+            title.setOrigin({ title.getLocalBounds().size.x / 2, title.getLocalBounds().size.y / 2 });
+            title.setPosition({ 500, 150 });
+            window.draw(title);
+
+            sf::Vector2f slotPositions[3] = { {300.f, 200.f}, {300.f, 300.f}, {300.f, 400.f} };
+            sf::Vector2f mousePos = static_cast<sf::Vector2f>(sf::Mouse::getPosition(window));
+
+            for (int i = 0; i < 3; i++) {
+                sf::FloatRect slotRect;
+                slotRect.position = slotPositions[i];
+                slotRect.size = { 200.f, 60.f };
+
+                sf::RectangleShape slot(sf::Vector2f(200.f, 60.f));
+                if (slotRect.contains(mousePos)) {
+                    slot.setFillColor(sf::Color(80, 80, 80, 200));
+                }
+                else {
+                    slot.setFillColor(sf::Color(50, 50, 50, 200));
+                }
+                slot.setOutlineColor(sf::Color::White);
+                slot.setOutlineThickness(2.f);
+                slot.setPosition(slotPositions[i]);
+                window.draw(slot);
+
+                sf::Text slotText(font);
+                slotText.setString("Slot " + std::to_string(i + 1));
+                slotText.setCharacterSize(20);
+                slotText.setFillColor(sf::Color::White);
+                slotText.setOrigin({ slotText.getLocalBounds().size.x / 2, slotText.getLocalBounds().size.y / 2 });
+                slotText.setPosition({ slotPositions[i].x + 100, slotPositions[i].y + 30 });
+                window.draw(slotText);
+            }
+        }
+
+        if (showLoadSlots) {
+            sf::RectangleShape overlay(sf::Vector2f(1000.f, 700.f));
+            overlay.setFillColor(sf::Color(0, 0, 0, 180));
+            window.draw(overlay);
+
+            sf::Text title(font);
+            title.setString("LOAD GAME");
+            title.setCharacterSize(30);
+            title.setFillColor(sf::Color::White);
+            title.setOrigin({ title.getLocalBounds().size.x / 2, title.getLocalBounds().size.y / 2 });
+            title.setPosition({ 500, 150 });
+            window.draw(title);
+
+            sf::Vector2f slotPositions[3] = { {300.f, 200.f}, {300.f, 300.f}, {300.f, 400.f} };
+            sf::Vector2f mousePos = static_cast<sf::Vector2f>(sf::Mouse::getPosition(window));
+
+            for (int i = 0; i < 3; i++) {
+                sf::FloatRect slotRect;
+                slotRect.position = slotPositions[i];
+                slotRect.size = { 200.f, 60.f };
+
+                sf::RectangleShape slot(sf::Vector2f(200.f, 60.f));
+                if (slotRect.contains(mousePos)) {
+                    slot.setFillColor(sf::Color(80, 80, 80, 200));
+                }
+                else {
+                    slot.setFillColor(sf::Color(50, 50, 50, 200));
+                }
+                slot.setOutlineColor(sf::Color::White);
+                slot.setOutlineThickness(2.f);
+                slot.setPosition(slotPositions[i]);
+                window.draw(slot);
+
+                sf::Text slotText(font);
+                slotText.setString("Slot " + std::to_string(i + 1));
+                slotText.setCharacterSize(20);
+                slotText.setFillColor(sf::Color::White);
+                slotText.setOrigin({ slotText.getLocalBounds().size.x / 2, slotText.getLocalBounds().size.y / 2 });
+                slotText.setPosition({ slotPositions[i].x + 100, slotPositions[i].y + 30 });
+                window.draw(slotText);
+            }
         }
 
         window.display();
